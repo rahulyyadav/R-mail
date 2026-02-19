@@ -7,6 +7,7 @@ pydantic
 python-dotenv
 python-multipart
 certifi
+PyJWT
 google-auth
 google-auth-oauthlib
 google-auth-httplib2

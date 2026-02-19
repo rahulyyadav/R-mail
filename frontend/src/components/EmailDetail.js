@@ -1,11 +1,9 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useMailContext } from '../contexts/MailContext';
+import { api, API } from '../contexts/MailContext';
 import { ArrowLeft, Star, Reply, Forward, ChevronDown, ChevronUp, Send, User, Clock } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
-import axios from 'axios';
 import { toast } from 'sonner';
-
-const API = process.env.REACT_APP_API_URL || 'http://localhost:8001/api';
 
 function formatFullDate(dateStr) {
   try { return format(parseISO(dateStr), "EEEE, MMMM d, yyyy 'at' h:mm a"); }
@@ -146,7 +144,7 @@ export function EmailDetail() {
     if (selectedEmail.thread_id) {
       (async () => {
         try {
-          const res = await axios.get(`${API}/emails/thread/${selectedEmail.thread_id}`);
+          const res = await api.get(`${API}/emails/thread/${selectedEmail.thread_id}`);
           setThread(res.data || [selectedEmail]);
         } catch { setThread([selectedEmail]); }
       })();

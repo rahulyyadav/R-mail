@@ -4,9 +4,21 @@ import { toast } from 'sonner';
 
 const API = process.env.REACT_APP_API_URL || 'http://localhost:8001/api';
 const WS_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8001/api/ws';
+const TOKEN_KEY = 'rmail-auth-token';
+
+// Shared axios instance that auto-attaches JWT
+const api = axios.create();
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
 const MailContext = createContext(null);
 export const useMailContext = () => useContext(MailContext);
+export { api, API }; // export for use in other components
 
 export function MailProvider({ children }) {
   const [currentView, setCurrentView] = useState('inbox');
@@ -37,11 +49,23 @@ export function MailProvider({ children }) {
 
   // ── Auth ────────────────────────────────────────
   const fetchAuthStatus = useCallback(async () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      // No token stored — user is not logged in
+      setAuthStatus({ gmail_configured: false, email: '', mode: 'disconnected', can_login: true });
+      return { gmail_configured: false, email: '', mode: 'disconnected', can_login: true };
+    }
     try {
-      const res = await axios.get(`${API}/auth/status`);
+      const res = await api.get(`${API}/auth/status`);
       setAuthStatus(res.data);
       return res.data;
     } catch (e) {
+      if (e.response?.status === 401) {
+        // Token expired or invalid — clear it
+        localStorage.removeItem(TOKEN_KEY);
+        setAuthStatus({ gmail_configured: false, email: '', mode: 'disconnected', can_login: true });
+        return { gmail_configured: false, email: '', mode: 'disconnected', can_login: true };
+      }
       return authStatus;
     }
   }, [authStatus]);
@@ -59,15 +83,16 @@ export function MailProvider({ children }) {
 
   const logout = useCallback(async () => {
     try {
-      await axios.post(`${API}/auth/logout`);
-      setAuthStatus({ gmail_configured: false, email: '', mode: 'disconnected', can_login: true });
-      setEmails({ inbox: [], sent: [] });
-      setSelectedEmail(null);
-      setChatMessages([]);
-      toast.success('Logged out successfully');
+      await api.post(`${API}/auth/logout`);
     } catch (e) {
-      toast.error('Failed to logout');
+      // Even if backend call fails, clear local session
     }
+    localStorage.removeItem(TOKEN_KEY);
+    setAuthStatus({ gmail_configured: false, email: '', mode: 'disconnected', can_login: true });
+    setEmails({ inbox: [], sent: [] });
+    setSelectedEmail(null);
+    setChatMessages([]);
+    toast.success('Logged out successfully');
   }, []);
 
   // ── Emails ──────────────────────────────────────
@@ -80,7 +105,7 @@ export function MailProvider({ children }) {
       if (f.unreadOnly) params.unread_only = true;
       if (f.dateFrom) params.date_from = f.dateFrom;
       if (f.dateTo) params.date_to = f.dateTo;
-      const res = await axios.get(`${API}/emails`, { params });
+      const res = await api.get(`${API}/emails`, { params });
       setEmails(prev => ({ ...prev, [folder]: res.data }));
       if (folder === 'inbox') {
         setUnreadCount(res.data.filter(e => !e.is_read).length);
@@ -144,6 +169,10 @@ export function MailProvider({ children }) {
           toast.info('Signing in...');
           const res = await axios.get(`${API}/auth/callback`, { params: { code } });
           if (res.data?.success || res.status === 200) {
+            // Store JWT token
+            if (res.data.token) {
+              localStorage.setItem(TOKEN_KEY, res.data.token);
+            }
             toast.success('Signed in successfully!');
             const s = await fetchAuthStatus();
             if (s.gmail_configured) fetchAllEmails();
@@ -185,7 +214,7 @@ export function MailProvider({ children }) {
     if (!authStatus.gmail_configured) return;
     (async () => {
       try {
-        const res = await axios.get(`${API}/chat/history`);
+        const res = await api.get(`${API}/chat/history`);
         if (res.data && res.data.length > 0) setChatMessages(res.data);
       } catch (e) { /* ignore */ }
     })();
@@ -206,7 +235,7 @@ export function MailProvider({ children }) {
     setCurrentView('detail');
     if (!email.is_read) {
       try {
-        await axios.put(`${API}/emails/${email.id}/read`);
+        await api.put(`${API}/emails/${email.id}/read`);
         setEmails(prev => ({
           inbox: prev.inbox.map(e => e.id === email.id ? { ...e, is_read: true } : e),
           sent: prev.sent.map(e => e.id === email.id ? { ...e, is_read: true } : e),
@@ -220,7 +249,7 @@ export function MailProvider({ children }) {
   const sendEmail = useCallback(async (to, subject, body, replyMeta = {}) => {
     try {
       setIsLoading(true);
-      await axios.post(`${API}/emails/send`, {
+      await api.post(`${API}/emails/send`, {
         to_email: to,
         to_name: to.split('@')[0],
         subject,
@@ -338,7 +367,7 @@ export function MailProvider({ children }) {
         activeFilters: filters,
         userEmail: authStatus.email,
       };
-      const res = await axios.post(`${API}/ai/chat`, { message, context });
+      const res = await api.post(`${API}/ai/chat`, { message, context });
       const assistantMsg = {
         role: 'assistant',
         content: res.data.message || '',
@@ -356,7 +385,7 @@ export function MailProvider({ children }) {
 
   const clearChat = useCallback(async () => {
     try {
-      await axios.delete(`${API}/chat/history`);
+      await api.delete(`${API}/chat/history`);
       setChatMessages([]);
     } catch (e) { /* ignore */ }
   }, []);
@@ -364,7 +393,7 @@ export function MailProvider({ children }) {
   // ── Star toggle ─────────────────────────────────
   const toggleStar = useCallback(async (emailId) => {
     try {
-      const res = await axios.put(`${API}/emails/${emailId}/star`);
+      const res = await api.put(`${API}/emails/${emailId}/star`);
       const starred = res.data.starred;
       setEmails(prev => ({
         inbox: prev.inbox.map(e => e.id === emailId ? { ...e, starred } : e),

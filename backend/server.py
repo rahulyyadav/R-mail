@@ -1,4 +1,6 @@
-from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import jwt
 from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -130,6 +132,43 @@ OAUTH_SCOPES = [
 
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
 BACKEND_URL = os.environ.get('BACKEND_URL', 'http://localhost:8001')
+JWT_SECRET = os.environ.get('JWT_SECRET', 'change-me-in-production')
+JWT_ALGORITHM = 'HS256'
+JWT_EXPIRY_DAYS = 7
+
+# ── JWT Auth Helpers ────────────────────────────────────
+
+security = HTTPBearer(auto_error=False)
+
+
+def create_jwt_token(email: str) -> str:
+    """Create a JWT token for the given user email."""
+    payload = {
+        'email': email,
+        'exp': datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRY_DAYS),
+        'iat': datetime.now(timezone.utc),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
+    """FastAPI dependency: validate JWT and return user email."""
+    if not credentials:
+        raise HTTPException(status_code=401, detail='Not authenticated')
+    try:
+        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        email = payload.get('email')
+        if not email:
+            raise HTTPException(status_code=401, detail='Invalid token')
+        # Check if token is blacklisted
+        blacklisted = await db.jwt_blacklist.find_one({'token': credentials.credentials})
+        if blacklisted:
+            raise HTTPException(status_code=401, detail='Token has been revoked')
+        return email
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail='Token has expired')
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail='Invalid token')
 
 
 def _get_oauth_flow(redirect_uri: str = None):
@@ -379,13 +418,13 @@ async def root():
 
 
 @api_router.get("/auth/status")
-async def auth_status():
-    """Return authentication status and user profile."""
+async def auth_status(user_email: str = Depends(get_current_user)):
+    """Return authentication status and user profile (requires valid JWT)."""
     gmail_configured = is_gmail_configured()
     profile = user_profile_cache if user_profile_cache else {}
     return {
         "gmail_configured": gmail_configured,
-        "email": profile.get("email", ""),
+        "email": user_email,
         "mode": "gmail" if gmail_configured else "disconnected",
         "can_login": bool(os.environ.get('GMAIL_CLIENT_ID')),
     }
@@ -430,17 +469,27 @@ async def auth_callback(code: str):
         sent_count = await sync_gmail_to_db('sent', 30)
         asyncio.create_task(poll_gmail_for_new_emails())
 
-        logger.info(f"OAuth login successful: {profile.get('email', 'unknown')} ({inbox_count} inbox + {sent_count} sent)")
-        return {"success": True, "email": profile.get('email', ''), "inbox_count": inbox_count, "sent_count": sent_count}
+        # Generate JWT session token
+        user_email = profile.get('email', '')
+        token = create_jwt_token(user_email)
+
+        logger.info(f"OAuth login successful: {user_email} ({inbox_count} inbox + {sent_count} sent)")
+        return {"success": True, "token": token, "email": user_email, "inbox_count": inbox_count, "sent_count": sent_count}
     except Exception as e:
         logger.error(f"OAuth callback error: {e}")
         return {"success": False, "error": str(e)}
 
 
 @api_router.post("/auth/logout")
-async def auth_logout():
-    """Clear stored tokens and reset state."""
+async def auth_logout(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Clear stored tokens, blacklist JWT, and reset state."""
     global user_profile_cache, gmail_history_id
+    # Blacklist the current JWT so it can't be reused
+    if credentials:
+        await db.jwt_blacklist.insert_one({
+            'token': credentials.credentials,
+            'blacklisted_at': datetime.now(timezone.utc).isoformat(),
+        })
     await db.auth_tokens.delete_many({})
     await db.emails.delete_many({})
     await db.chat_messages.delete_many({})
@@ -459,6 +508,7 @@ async def get_emails(
     unread_only: bool = False,
     date_from: str = "",
     date_to: str = "",
+    user_email: str = Depends(get_current_user),
 ):
     query = {"folder": folder}
     conditions = []
@@ -493,7 +543,7 @@ async def get_emails(
 
 
 @api_router.get("/emails/{email_id}")
-async def get_email(email_id: str):
+async def get_email(email_id: str, user_email: str = Depends(get_current_user)):
     # Try by id first, then by gmail_id
     email = await db.emails.find_one({"id": email_id}, {"_id": 0})
     if not email:
@@ -504,7 +554,7 @@ async def get_email(email_id: str):
 
 
 @api_router.put("/emails/{email_id}/read")
-async def mark_as_read(email_id: str):
+async def mark_as_read(email_id: str, user_email: str = Depends(get_current_user)):
     # Update in DB
     result = await db.emails.update_one({"id": email_id}, {"$set": {"is_read": True}})
     if result.modified_count == 0:
@@ -522,7 +572,7 @@ async def mark_as_read(email_id: str):
 
 
 @api_router.put("/emails/{email_id}/star")
-async def toggle_star(email_id: str):
+async def toggle_star(email_id: str, user_email: str = Depends(get_current_user)):
     email = await db.emails.find_one(
         {"$or": [{"id": email_id}, {"gmail_id": email_id}]},
         {"_id": 0}
@@ -546,7 +596,7 @@ async def toggle_star(email_id: str):
 
 
 @api_router.post("/emails/send")
-async def send_email(email_data: EmailSend):
+async def send_email(email_data: EmailSend, user_email: str = Depends(get_current_user)):
     """Send a real email via Gmail API."""
     if is_gmail_configured():
         try:
@@ -594,7 +644,7 @@ async def send_email(email_data: EmailSend):
 
 
 @api_router.get("/emails/{email_id}/thread")
-async def get_email_thread(email_id: str):
+async def get_email_thread(email_id: str, user_email: str = Depends(get_current_user)):
     """Fetch all messages in a thread."""
     email = await db.emails.find_one(
         {"$or": [{"id": email_id}, {"gmail_id": email_id}]},
@@ -618,7 +668,7 @@ async def get_email_thread(email_id: str):
 
 
 @api_router.post("/gmail/sync")
-async def gmail_sync():
+async def gmail_sync(user_email: str = Depends(get_current_user)):
     """Manually trigger a Gmail sync."""
     if not is_gmail_configured():
         return {"error": "Gmail is not configured"}
@@ -631,7 +681,7 @@ async def gmail_sync():
 
 
 @api_router.post("/ai/chat")
-async def ai_chat(request: ChatRequest):
+async def ai_chat(request: ChatRequest, user_email: str = Depends(get_current_user)):
     try:
         result = await process_ai_message(request.message, request.context)
 
@@ -651,13 +701,13 @@ async def ai_chat(request: ChatRequest):
 
 
 @api_router.get("/chat/history")
-async def get_chat_history():
+async def get_chat_history(user_email: str = Depends(get_current_user)):
     messages = await db.chat_messages.find({}, {"_id": 0}).sort("timestamp", 1).to_list(100)
     return messages
 
 
 @api_router.delete("/chat/history")
-async def clear_chat_history():
+async def clear_chat_history(user_email: str = Depends(get_current_user)):
     await db.chat_messages.delete_many({})
     return {"success": True}
 
