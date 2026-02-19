@@ -1,14 +1,16 @@
 fastapi
 uvicorn
+websockets
 motor
 httpx
 pydantic
 python-dotenv
 python-multipart
+certifi
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
 google-api-python-client
-google-generativeai
+google-genai
 email-validator
 dnspython
