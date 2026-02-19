@@ -1,0 +1,7 @@
+{
+  "type": "module",
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "googleapis": "^171.4.0"
+  }
+}
