@@ -690,7 +690,11 @@ async def startup():
     global user_profile_cache
 
     # Try loading tokens from DB first
-    await load_tokens_from_db()
+    try:
+        await load_tokens_from_db()
+    except Exception as e:
+        logger.error(f"Failed to load tokens from DB at startup: {e}")
+        logger.warning("MongoDB connection might be down or blocked. App will start but auth may fail.")
 
     # Run startup sync in BACKGROUND so we don't block the port binding
     asyncio.create_task(background_startup_sync())
