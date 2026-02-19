@@ -366,6 +366,13 @@ RULES:
 
 # ── API Routes ──────────────────────────────────────────
 
+# Root health-check (on the app itself, not the /api router)
+# This ensures uptime monitors hitting "/" get a 200 OK.
+@app.get("/")
+async def health_check():
+    return {"status": "ok", "message": "R-Mail Backend is running"}
+
+
 @api_router.get("/")
 async def root():
     return {"message": "AI Mail App API"}
