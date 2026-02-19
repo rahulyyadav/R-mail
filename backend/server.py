@@ -691,9 +691,19 @@ async def startup():
     # Try loading tokens from DB first
     await load_tokens_from_db()
 
+    # Run startup sync in BACKGROUND so we don't block the port binding
+    asyncio.create_task(background_startup_sync())
+
+
+async def background_startup_sync():
+    """Perform heavy startup tasks in background."""
+    global user_profile_cache
     if is_gmail_configured():
-        logger.info("Gmail is configured — syncing real emails...")
+        logger.info("Gmail is configured — syncing real emails (background)...")
         try:
+            # Add a small delay to let server start up
+            await asyncio.sleep(2)
+            
             user_profile_cache = get_user_profile()
             logger.info(f"Authenticated as: {user_profile_cache.get('email', 'unknown')}")
 
