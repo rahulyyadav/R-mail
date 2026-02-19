@@ -269,6 +269,71 @@ body {
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
+/* ── Button Press Animation ───────────────────────── */
+.btn-press {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.btn-press:active {
+  transform: scale(0.95);
+}
+
+/* ── Floating Sidebar ─────────────────────────────── */
+.floating-sidebar {
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: width;
+}
+
+.sidebar-label {
+  transition: opacity 0.2s ease, max-width 0.3s ease;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.sidebar-collapsed .sidebar-label {
+  opacity: 0;
+  max-width: 0;
+}
+
+.sidebar-expanded .sidebar-label {
+  opacity: 1;
+  max-width: 200px;
+}
+
+/* ── Mail Card ────────────────────────────────────── */
+.mail-card {
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 0.25s ease,
+    background 0.2s ease;
+  will-change: transform, box-shadow;
+}
+
+.mail-card:hover {
+  transform: translateY(-2px) scale(1.005);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.dark .mail-card:hover {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+@keyframes card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mail-card-enter {
+  animation: card-enter 0.35s ease-out both;
+}
+
 /* ── Avatar Ring ───────────────────────────────────── */
 .avatar-ring {
   box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--avatar-ring);

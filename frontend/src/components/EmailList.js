@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { useMailContext } from '../contexts/MailContext';
-import { Star, X } from 'lucide-react';
+import { Star, X, Paperclip } from 'lucide-react';
 import { format, isToday, isYesterday, parseISO } from 'date-fns';
 
 function formatDate(dateStr) {
@@ -51,7 +51,7 @@ export function EmailList() {
   }, [list, filters.unreadOnly]);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden" style={{ background: 'var(--bg-primary)' }}>
       {/* Header */}
       <div className="px-6 py-4 shrink-0 flex items-center justify-between" style={{ borderBottom: '1px solid var(--border-color)' }}>
         <div>
@@ -77,8 +77,8 @@ export function EmailList() {
         </div>
       )}
 
-      {/* List */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Card List */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-2">
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full py-20 animate-fade-in">
             <div className="text-4xl mb-3">📭</div>
@@ -88,54 +88,75 @@ export function EmailList() {
           </div>
         ) : (
           filtered.map((email, i) => (
-            <React.Fragment key={email.id || i}>
+            <div
+              key={email.id || i}
+              onClick={() => openEmail(email)}
+              className="mail-card mail-card-enter flex items-start gap-3.5 px-5 py-4 rounded-2xl cursor-pointer group"
+              style={{
+                animationDelay: `${Math.min(i * 40, 400)}ms`,
+                background: !email.is_read ? 'var(--accent-light)' : 'var(--bg-card)',
+                border: `1px solid ${!email.is_read ? 'var(--accent-glow)' : 'var(--border-color)'}`,
+                borderLeft: !email.is_read ? '3px solid var(--accent)' : '1px solid var(--border-color)',
+              }}
+            >
+              {/* Avatar */}
               <div
-                onClick={() => openEmail(email)}
-                className="flex items-start gap-3 px-6 py-3.5 cursor-pointer transition-all duration-150 group"
+                className="h-10 w-10 rounded-xl flex items-center justify-center text-sm font-bold text-white shrink-0 mt-0.5"
                 style={{
-                  background: !email.is_read ? 'var(--accent-light)' : 'transparent',
-                  borderLeft: !email.is_read ? '3px solid var(--accent)' : '3px solid transparent',
+                  background: AvatarColor(email.from_name || email.from_email),
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
                 }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-card-hover)'}
-                onMouseLeave={e => e.currentTarget.style.background = !email.is_read ? 'var(--accent-light)' : 'transparent'}
               >
-                {/* Avatar */}
-                <div
-                  className="h-9 w-9 rounded-xl flex items-center justify-center text-xs font-bold text-white shrink-0 mt-0.5"
-                  style={{ background: AvatarColor(email.from_name || email.from_email) }}
+                {getInitials(email.from_name, email.from_email)}
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1">
+                  <span
+                    className="text-[13px] truncate"
+                    style={{
+                      color: 'var(--text-primary)',
+                      fontWeight: !email.is_read ? '700' : '500',
+                    }}
+                  >
+                    {currentView === 'sent' ? email.to_name || email.to_email : email.from_name || email.from_email}
+                  </span>
+                  <span className="text-[11px] ml-3 shrink-0 font-medium" style={{ color: 'var(--text-faint)' }}>
+                    {formatDate(email.date)}
+                  </span>
+                </div>
+                <p
+                  className="text-[12.5px] truncate mb-0.5"
+                  style={{
+                    color: 'var(--text-secondary)',
+                    fontWeight: !email.is_read ? '600' : '400',
+                  }}
                 >
-                  {getInitials(email.from_name, email.from_email)}
-                </div>
+                  {email.subject}
+                </p>
+                <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+                  {email.preview}
+                </p>
+              </div>
 
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-0.5">
-                    <span className="text-[13px] font-semibold truncate" style={{ color: 'var(--text-primary)', fontWeight: !email.is_read ? '700' : '600' }}>
-                      {currentView === 'sent' ? email.to_name || email.to_email : email.from_name || email.from_email}
-                    </span>
-                    <span className="text-[11px] ml-3 shrink-0" style={{ color: 'var(--text-faint)' }}>
-                      {formatDate(email.date)}
-                    </span>
-                  </div>
-                  <p className="text-xs truncate mb-0.5" style={{ color: 'var(--text-secondary)', fontWeight: !email.is_read ? '600' : '400' }}>
-                    {email.subject}
-                  </p>
-                  <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
-                    {email.preview}
-                  </p>
-                </div>
-
-                {/* Star */}
+              {/* Actions */}
+              <div className="flex flex-col items-center gap-2 shrink-0 mt-0.5">
                 <button
                   onClick={(e) => { e.stopPropagation(); toggleStar(email.id); }}
-                  className="shrink-0 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="opacity-0 group-hover:opacity-100 transition-all duration-200 btn-press"
                   style={{ color: email.starred ? 'var(--star-color)' : 'var(--text-faint)' }}
                 >
                   <Star className="h-4 w-4" fill={email.starred ? 'var(--star-color)' : 'none'} />
                 </button>
+                {!email.is_read && (
+                  <div
+                    className="h-2 w-2 rounded-full"
+                    style={{ background: 'var(--accent)', boxShadow: '0 0 6px var(--accent-glow)' }}
+                  />
+                )}
               </div>
-              {i < filtered.length - 1 && <div className="accent-line mx-6" />}
-            </React.Fragment>
+            </div>
           ))
         )}
       </div>

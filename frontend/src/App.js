@@ -4,6 +4,7 @@ import { LoginPage } from './components/LoginPage';
 import { Toaster } from 'sonner';
 
 // Lazy load dashboard components
+const TopBar = React.lazy(() => import('./components/TopBar').then(m => ({ default: m.TopBar })));
 const Sidebar = React.lazy(() => import('./components/Sidebar').then(m => ({ default: m.Sidebar })));
 const EmailList = React.lazy(() => import('./components/EmailList').then(m => ({ default: m.EmailList })));
 const EmailDetail = React.lazy(() => import('./components/EmailDetail').then(m => ({ default: m.EmailDetail })));
@@ -24,12 +25,15 @@ function MailDashboard() {
   const { currentView } = useMailContext();
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg-primary)' }}>
+    <div className="h-screen flex flex-col overflow-hidden" style={{ background: 'var(--bg-primary)' }}>
       <React.Suspense fallback={null}>
-        <Sidebar />
-        <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {currentView === 'detail' ? <EmailDetail /> : <EmailList />}
-        </main>
+        <TopBar />
+        <div className="flex-1 flex min-h-0">
+          <Sidebar />
+          <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+            {currentView === 'detail' ? <EmailDetail /> : <EmailList />}
+          </main>
+        </div>
         <ComposeModal />
         <AIAssistant />
       </React.Suspense>
